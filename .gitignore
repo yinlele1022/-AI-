@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# 环境变量（包含 API Key，勿提交）
+.env
+
+# 数据库（可选：如需保留排行榜数据则提交）
+# backend/data/game.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 日志
+*.log
+
+# 压缩包（可通过源码重新生成）
+*.zip
+*.tar.gz
