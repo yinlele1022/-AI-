@@ -2092,7 +2092,7 @@
     ctx.fillStyle = COLOR_PRIMARY;
     ctx.shadowColor = 'rgba(0,245,160,' + titlePulse.toFixed(2) + ')';
     ctx.shadowBlur = 18 + Math.sin(homeTime * 2.1) * 5;
-    ctx.font = '900 62px ' + FONT_FAMILY;
+    ctx.font = '900 50px ' + FONT_FAMILY;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('别信你的脑子', CANVAS_W / 2, 130);
