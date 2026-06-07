@@ -2095,7 +2095,7 @@
     ctx.font = '900 62px ' + FONT_FAMILY;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('反着来', CANVAS_W / 2, 130);
+    ctx.fillText('别信你的脑子', CANVAS_W / 2, 130);
     ctx.restore();
 
     ctx.fillStyle = COLOR_SECONDARY;
@@ -2518,19 +2518,24 @@
     // ── 双人对战顶栏 ──
     this.drawMicroLabel(ctx, 'ROUND ' + this.onlineRound + ' / ' + this.onlineTotalRounds,
       60, 28, 'left', COLOR_PRIMARY);
-    this.drawMicroLabel(ctx, 'VS ' + (this.opponentName || '对手'),
-      CANVAS_W / 2, 28, 'center', COLOR_INFO);
     this.drawMicroLabel(ctx, 'SCORE ' + this.onlineScores.me,
       CANVAS_W - 22, 28, 'right', COLOR_WARNING);
 
     // 双方分数
+    var opponentScoreText = (this.opponentName || '对手') + '  ' +
+      (this.opponentScore || 0) + ' 分';
     ctx.fillStyle = COLOR_PRIMARY;
-    ctx.font = 'bold 13px ' + FONT_MONO;
+    ctx.font = 'bold 12px ' + FONT_FAMILY;
     ctx.textAlign = 'left';
-    ctx.fillText('我: ' + this.onlineScores.me + ' 分', 22, 50);
+    ctx.fillText('我  ' + this.onlineScores.me + ' 分', 22, 50);
+    this.drawMicroLabel(ctx, 'VS', CANVAS_W / 2, 50, 'center', COLOR_INFO);
+    var opponentScoreSize = this.setFitFont(
+      ctx, opponentScoreText, 132, 12, 9, 'bold', FONT_FAMILY
+    );
+    ctx.fillStyle = COLOR_PRIMARY;
+    ctx.font = 'bold ' + opponentScoreSize + 'px ' + FONT_FAMILY;
     ctx.textAlign = 'right';
-    ctx.fillText((this.opponentName || '对手') + ': ' + (this.opponentScore || 0) + ' 分',
-      CANVAS_W - 22, 50);
+    ctx.fillText(opponentScoreText, CANVAS_W - 22, 50);
 
     // 分隔线
     ctx.strokeStyle = 'rgba(0,245,160,0.20)';
