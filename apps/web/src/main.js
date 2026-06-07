@@ -223,8 +223,6 @@
     if (!this.stableViewportHeight || !mobileLayout || widthChanged) {
       this.stableViewportWidth = viewportW;
       this.stableViewportHeight = viewportH;
-    } else if (viewportH > this.stableViewportHeight) {
-      this.stableViewportHeight = viewportH;
     }
 
     document.documentElement.style.setProperty(
@@ -2414,13 +2412,6 @@
       ctx.fillText(this.homeNotice, CANVAS_W / 2, 480);
     }
 
-    this.drawBtn(ctx, 34, 650, CANVAS_W - 68, 52,
-      '返回首页  /  BACK', 'onlineBack', 'onlineBack', {
-        bg: 'rgba(14,22,20,0.94)',
-        border: 'rgba(255,255,255,0.22)',
-        text: COLOR_SECONDARY,
-        fontSize: 14, radius: BTN_RADIUS
-      });
   };
 
   // ── queuing：匹配中 ──
@@ -2499,13 +2490,6 @@
       ctx.fillText(countdown + ' 秒后开始', CANVAS_W / 2, 400);
     }
 
-    this.drawBtn(ctx, 34, 520, CANVAS_W - 68, 48,
-      '返回首页  /  BACK', 'onlineBack', 'onlineBack', {
-        bg: 'rgba(14,22,20,0.94)',
-        border: 'rgba(255,255,255,0.18)',
-        text: COLOR_SECONDARY,
-        fontSize: 13, radius: BTN_RADIUS
-      });
   };
 
   // ── playing：在线对战进行中 ──
@@ -2738,13 +2722,6 @@
       '再来一局  /  REMATCH', 'pkRematch', 'pkRematch', {
         bg: COLOR_PRIMARY, border: COLOR_PRIMARY, text: '#07110d',
         fontSize: 15, radius: BTN_RADIUS, glow: 'rgba(0,245,160,0.26)'
-      });
-    this.drawBtn(ctx, 34, 502, CANVAS_W - 68, 48,
-      '返回首页  /  HOME', 'onlineBack', 'onlineBack', {
-        bg: 'rgba(14,22,20,0.94)',
-        border: 'rgba(255,255,255,0.22)',
-        text: COLOR_SECONDARY,
-        fontSize: 13, radius: BTN_RADIUS
       });
   };
 
