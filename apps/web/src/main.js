@@ -115,6 +115,9 @@
 
     // 缩放比例
     this.scale = 1;
+    this.stableViewportWidth = 0;
+    this.stableViewportHeight = 0;
+    this.viewportResizeTimer = null;
 
     // 游戏状态
     this.page = 'home';         // home | level_select | online_pk | tutorial | playing | pk_transition | result | leaderboard
@@ -204,9 +207,34 @@
   // ─── 尺寸适配 ───────────────────────────────────────────
 
   OppositeGame.prototype.resize = function () {
+    var viewportW = Math.max(1, Math.round(
+      window.innerWidth || document.documentElement.clientWidth
+    ));
+    var viewportH = Math.max(1, Math.round(
+      window.innerHeight || document.documentElement.clientHeight
+    ));
+    var mobileLayout = viewportW <= 600 || (navigator.maxTouchPoints || 0) > 0;
+    var widthChanged = !this.stableViewportWidth ||
+      Math.abs(viewportW - this.stableViewportWidth) >
+        Math.max(48, this.stableViewportWidth * 0.18);
+
+    // 软键盘只改变可视高度，不应该缩放游戏。首次加载、横竖屏切换
+    // 或分屏导致宽度明显变化时，才更新稳定布局尺寸。
+    if (!this.stableViewportHeight || !mobileLayout || widthChanged) {
+      this.stableViewportWidth = viewportW;
+      this.stableViewportHeight = viewportH;
+    } else if (viewportH > this.stableViewportHeight) {
+      this.stableViewportHeight = viewportH;
+    }
+
+    document.documentElement.style.setProperty(
+      '--app-height',
+      this.stableViewportHeight + 'px'
+    );
+
     var bounds = this.shell ? this.shell.getBoundingClientRect() : null;
-    var screenW = bounds && bounds.width ? bounds.width : window.innerWidth;
-    var screenH = bounds && bounds.height ? bounds.height : window.innerHeight;
+    var screenW = bounds && bounds.width ? bounds.width : viewportW;
+    var screenH = bounds && bounds.height ? bounds.height : this.stableViewportHeight;
     var dpr = Math.min(window.devicePixelRatio || 1, 3);
 
     // 手机按视口等比适配，桌面端限制放大，避免把移动稿拉成巨幅海报。
@@ -251,10 +279,22 @@
   OppositeGame.prototype.bindEvents = function () {
     var self = this;
 
-    window.addEventListener('resize', function () { self.resize(); });
-    window.addEventListener('orientationchange', function () { self.resize(); });
+    function requestResize() {
+      if (self.viewportResizeTimer !== null) clearTimeout(self.viewportResizeTimer);
+      self.viewportResizeTimer = setTimeout(function () {
+        self.viewportResizeTimer = null;
+        self.resize();
+      }, 50);
+    }
+
+    window.addEventListener('resize', requestResize);
+    window.addEventListener('orientationchange', function () {
+      self.stableViewportWidth = 0;
+      self.stableViewportHeight = 0;
+      requestResize();
+    });
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', function () { self.resize(); });
+      window.visualViewport.addEventListener('resize', requestResize);
     }
 
     // 触控
@@ -997,26 +1037,72 @@
   // ─── 排行榜存储 ───────────────────────────────────────
 
   var LEADERBOARD_KEY = 'opposite_leaderboard';
+  var PLAYER_NAME_KEY = 'opposite_player_name';
   var LEADERBOARD_MAX = 50;
 
-  OppositeGame.prototype.saveToLeaderboard = function () {
-    if (this.playMode !== 'challenge' && this.playMode !== 'level') return;
+  OppositeGame.prototype.setLeaderboardPlayerName = function (value) {
+    var name = String(value || '').trim().slice(0, 8);
+    if (!name) return '';
+    this.onlinePlayerName = name;
     try {
-      var entry = {
-        mode: this.gameMode,
-        playMode: this.playMode,
-        level: this.playMode === 'level' ? this.selectedLevel : null,
-        totalQuestions: this.getTotalQuestions(),
-        totalScore: this.getSafeTotalScore(),
-        correctCount: this.getSafeNumber(this.score, 0),
-        maxCombo: this.getSafeNumber(this.maxCombo, 0),
-        fastestReaction: this.getSafeNumber(this.fastestReaction, null),
-        title: this.resultTitle || this.getResultTitle(),
-        date: new Date().toLocaleString('zh-CN', {
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', minute: '2-digit'
-        })
-      };
+      localStorage.setItem(PLAYER_NAME_KEY, name);
+    } catch (_) {
+      // localStorage 不可用时仍保留当前会话昵称
+    }
+    return name;
+  };
+
+  OppositeGame.prototype.getLeaderboardPlayerName = function () {
+    var name = String(this.onlinePlayerName || '').trim().slice(0, 8);
+    if (!name) {
+      try {
+        name = String(localStorage.getItem(PLAYER_NAME_KEY) || '').trim().slice(0, 8);
+      } catch (_) {
+        name = '';
+      }
+    }
+    if (!name) {
+      name = '玩家' + String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    }
+    return this.setLeaderboardPlayerName(name);
+  };
+
+  OppositeGame.prototype.submitLeaderboardEntry = function (entry) {
+    if (!entry || !window.AppApi ||
+        typeof window.AppApi.submitLeaderboard !== 'function') {
+      return;
+    }
+    var self = this;
+    window.AppApi.submitLeaderboard(entry, function (err) {
+      if (err) {
+        console.warn('[排行榜] 云端成绩提交失败:', err);
+        return;
+      }
+      if (typeof self.invalidateCloudLeaderboard === 'function') {
+        self.invalidateCloudLeaderboard();
+      }
+    });
+  };
+
+  OppositeGame.prototype.saveToLeaderboard = function () {
+    if (this.playMode !== 'challenge' && this.playMode !== 'level') return null;
+    var entry = {
+      playerName: this.getLeaderboardPlayerName(),
+      mode: this.gameMode,
+      playMode: this.playMode,
+      level: this.playMode === 'level' ? this.selectedLevel : null,
+      totalQuestions: this.getTotalQuestions(),
+      totalScore: this.getSafeTotalScore(),
+      correctCount: this.getSafeNumber(this.score, 0),
+      maxCombo: this.getSafeNumber(this.maxCombo, 0),
+      fastestReaction: this.getSafeNumber(this.fastestReaction, null),
+      title: this.resultTitle || this.getResultTitle(),
+      date: new Date().toLocaleString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      })
+    };
+    try {
       var list = this.loadLeaderboard();
       list.push(entry);
       list.sort(function (a, b) { return b.totalScore - a.totalScore; });
@@ -1027,6 +1113,7 @@
     } catch (_) {
       // localStorage 不可用时静默忽略
     }
+    return entry;
   };
 
   OppositeGame.prototype.loadLeaderboard = function () {
@@ -1527,7 +1614,11 @@
       };
     }
 
-    this.saveToLeaderboard();
+    var leaderboardEntry = this.saveToLeaderboard();
+    if (leaderboardEntry) {
+      leaderboardEntry.answers = this.answers.slice();
+      this.submitLeaderboardEntry(leaderboardEntry);
+    }
 
     // ════════════════════════════════════════
     // 音频：结算音效（队友提供）
@@ -2278,6 +2369,7 @@
         this.drawOnlinePkIdle(ctx);
         break;
     }
+    if (this.onlinePkState !== 'playing') this.drawCompactBackButton(ctx);
   };
 
   // ── idle：等待用户点击匹配 ──

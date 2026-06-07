@@ -225,7 +225,12 @@
     var doMatch = function () {
       var name = input.value.trim() || ('玩家' + Math.floor(Math.random() * 9999));
       name = name.slice(0, 8);
-      self.onlinePlayerName = name;
+      if (typeof self.setLeaderboardPlayerName === 'function') {
+        self.setLeaderboardPlayerName(name);
+      } else {
+        self.onlinePlayerName = name;
+      }
+      input.blur();
       overlay.classList.remove('is-open');
       overlay.setAttribute('aria-hidden', 'true');
       if (global.AudioManager) global.AudioManager.unlock();
@@ -234,6 +239,7 @@
     };
 
     var doCancel = function () {
+      input.blur();
       overlay.classList.remove('is-open');
       overlay.setAttribute('aria-hidden', 'true');
       self.canvas.focus();

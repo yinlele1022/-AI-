@@ -88,14 +88,43 @@
 
   function health(callback) {
     fetch(API_BASE + '/health')
-      .then(function (res) { return res.json(); })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
       .then(function (data) { callback(null, data); })
       .catch(function (err) { callback(err, null); });
   }
 
+  function submitLeaderboard(entry, callback) {
+    fetch(API_BASE + '/api/leaderboard/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        player_name: entry.playerName,
+        score: entry.totalScore,
+        max_combo: entry.maxCombo,
+        fastest_reaction_ms: entry.fastestReaction === null ||
+          entry.fastestReaction === undefined
+          ? 999999
+          : entry.fastestReaction,
+        answers: entry.answers || []
+      })
+    })
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function (data) { callback(null, data); })
+    .catch(function (err) { callback(err, null); });
+  }
+
   function getLeaderboard(callback) {
     fetch(API_BASE + '/api/leaderboard/top')
-      .then(function (res) { return res.json(); })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
       .then(function (data) { callback(null, data); })
       .catch(function (err) { callback(err, null); });
   }
@@ -108,6 +137,7 @@
     createChallenge: createChallenge,
     getChallenge: getChallenge,
     health: health,
+    submitLeaderboard: submitLeaderboard,
     getLeaderboard: getLeaderboard
   };
 
