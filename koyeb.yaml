@@ -1,0 +1,6 @@
+[build]
+  command = "pip install -r requirements.txt"
+
+[deploy]
+  command = "gunicorn --worker-class eventlet -w 1 -b 0.0.0.0:$PORT apps.server.run:app"
+  healthcheck_path = "/health"
