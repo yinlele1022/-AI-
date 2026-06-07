@@ -15,47 +15,16 @@
     var timeline = null;
     var connectionTimeline = null;
     var warningTween = null;
+    var connectionFallbackTimer = null;
 
     function startIntroMusic() {
       if (!global.AudioManager) return;
-      var startVolume = 0.015;
-      var targetVolume = 0.115;
-      var volumeState = { value: startVolume };
-
       global.AudioManager.playBGM("theme", {
-        volume: startVolume,
-        fadeInMs: 100,
-        fadeOutMs: 400
+        volume: 0.22,
+        fadeInMs: 80,
+        fadeOutMs: 100
       });
-
-      global.AudioManager.unlock().then(function () {
-        if (global.gsap) {
-          global.gsap.to(volumeState, {
-            value: targetVolume,
-            duration: 1.4,
-            ease: "power2.inOut",
-            overwrite: true,
-            onUpdate: function () {
-              global.AudioManager.setBGVolume(volumeState.value);
-            },
-            onComplete: function () {
-              global.AudioManager.setBGVolume(targetVolume);
-            }
-          });
-          return;
-        }
-
-        var startedAt = Date.now();
-        function step() {
-          var progress = Math.min(1, (Date.now() - startedAt) / 1400);
-          var eased = progress * progress * (3 - 2 * progress);
-          global.AudioManager.setBGVolume(
-            startVolume + (targetVolume - startVolume) * eased
-          );
-          if (progress < 1) global.requestAnimationFrame(step);
-        }
-        global.requestAnimationFrame(step);
-      });
+      global.AudioManager.unlock();
     }
 
     if (!overlay) {
@@ -71,6 +40,7 @@
       if (timeline) timeline.kill();
       if (connectionTimeline) connectionTimeline.kill();
       if (warningTween) warningTween.kill();
+      if (connectionFallbackTimer) global.clearTimeout(connectionFallbackTimer);
 
       if (global.gsap) {
         global.gsap.to(overlay, {
@@ -97,7 +67,7 @@
         canvas.style.transform = "none";
       }
       if (canvas) canvas.focus();
-      if (global.AudioManager) global.AudioManager.setBGVolume(0.115);
+      if (global.AudioManager) global.AudioManager.setBGVolume(0.22);
       onComplete();
     }
 
@@ -105,6 +75,7 @@
       if (finished || connecting) return;
       connecting = true;
       startIntroMusic();
+      connectionFallbackTimer = global.setTimeout(finish, 2200);
 
       if (startButton) {
         startButton.disabled = true;
@@ -170,10 +141,9 @@
       return { finish: beginConnection };
     }
 
-    global.gsap.set(".intro-alert", { autoAlpha: 0, scale: 0.92 });
-    global.gsap.set(".intro-warning", { autoAlpha: 0, y: -18, scale: 0.55, rotation: -8 });
+    global.gsap.set(".intro-alert", { scale: 0.92 });
+    global.gsap.set(".intro-warning", { y: -18, scale: 0.55, rotation: -8 });
     global.gsap.set(".intro-alert h1, .intro-copy > *, .intro-start, .intro-code", {
-      autoAlpha: 0,
       y: 12
     });
 

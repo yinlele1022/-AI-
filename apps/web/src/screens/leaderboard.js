@@ -10,6 +10,25 @@
   var FONT_FAMILY = ui.FONT_FAMILY;
   var FONT_MONO = ui.FONT_MONO;
 
+  function fitText(ctx, value, maxWidth) {
+    var text = String(value || '--');
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    while (text.length > 1 && ctx.measureText(text + '…').width > maxWidth) {
+      text = text.slice(0, -1);
+    }
+    return text + '…';
+  }
+
+  function formatDate(value) {
+    var text = String(value || '');
+    var match = text.match(/^\s*(?:\d{4}[\/-])?(\d{1,2})[\/-](\d{1,2}).*?(\d{1,2}):(\d{2})/);
+    if (match) {
+      return ('0' + match[1]).slice(-2) + '/' + ('0' + match[2]).slice(-2) +
+        ' ' + ('0' + match[3]).slice(-2) + ':' + match[4];
+    }
+    return text.length > 11 ? text.slice(-11) : text || '--';
+  }
+
   /**
    * 排行榜页输入处理
    */
@@ -69,13 +88,10 @@
       ctx.font = '11px ' + FONT_MONO;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
-      ctx.fillText('RANK', 40, headerY);
-      ctx.fillText('SCORE', 106, headerY);
-      ctx.textAlign = 'center';
-      ctx.fillText('TITLE', 230, headerY);
+      ctx.fillText('RANK / SCORE', 40, headerY);
+      ctx.fillText('TITLE / STATS', 150, headerY);
       ctx.textAlign = 'right';
-      ctx.fillText('MODE', CANVAS_W - 98, headerY);
-      ctx.fillText('DATE', CANVAS_W - 42, headerY);
+      ctx.fillText('MODE / DATE', CANVAS_W - 40, headerY);
 
       // 分隔线
       ctx.strokeStyle = 'rgba(255,255,255,0.08)';
@@ -85,7 +101,7 @@
       ctx.stroke();
 
       // 列表项
-      var itemY = headerY + 32;
+      var itemY = headerY + 22;
       var itemsToShow = Math.min(list.length, 8);
 
       for (var i = 0; i < itemsToShow; i++) {
@@ -101,10 +117,10 @@
             'rgba(205,127,50,0.07)'   // 铜
           ];
           ctx.fillStyle = medalColors[rank - 1];
-          ctx.fillRect(34, itemY - 10, CANVAS_W - 68, 48);
+          ctx.fillRect(34, itemY, CANVAS_W - 68, 54);
           if (rank === 1) {
             ctx.fillStyle = 'rgba(255,215,0,0.28)';
-            ctx.fillRect(34, itemY - 10, 3, 48);
+            ctx.fillRect(34, itemY, 3, 54);
           }
         }
 
@@ -116,34 +132,37 @@
         ctx.font = 'bold ' + (isTop3 ? 16 : 13) + 'px ' + FONT_MONO;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        var medal = rank === 1 ? '👑 ' : rank === 2 ? '🥈 ' : rank === 3 ? '🥉 ' : '';
-        ctx.fillText(medal + '#' + rank, 40, itemY + 12);
+        ctx.fillText(('0' + rank).slice(-2), 42, itemY + 20);
+        if (isTop3) {
+          ctx.font = 'bold 8px ' + FONT_MONO;
+          ctx.fillText('TOP', 42, itemY + 39);
+        }
 
         // 分数（主要信息）
         ctx.fillStyle = COLOR_WHITE;
-        ctx.font = 'bold 17px ' + FONT_MONO;
-        ctx.fillText(String(entry.totalScore), 106, itemY + 12);
+        ctx.font = 'bold 16px ' + FONT_MONO;
+        ctx.fillText(String(entry.totalScore), 82, itemY + 19);
         ctx.fillStyle = COLOR_PRIMARY;
-        ctx.font = '9px ' + FONT_MONO;
-        ctx.fillText('PTS', 106, itemY + 30);
+        ctx.font = '8px ' + FONT_MONO;
+        ctx.fillText('PTS', 82, itemY + 39);
 
         // 称号
         ctx.fillStyle = COLOR_WHITE;
-        ctx.font = '13px ' + FONT_FAMILY;
-        ctx.textAlign = 'center';
-        ctx.fillText(entry.title || '--', 230, itemY + 6);
+        ctx.font = 'bold 12px ' + FONT_FAMILY;
+        ctx.textAlign = 'left';
+        ctx.fillText(fitText(ctx, entry.title || '--', 100), 150, itemY + 18);
 
         // 详细信息（正确数 / 连击 / 反应时间）
-        var detail = '✓' + (entry.correctCount || 0) + '/' + (entry.totalQuestions || 20);
+        var detail = '正确 ' + (entry.correctCount || 0) + '/' + (entry.totalQuestions || 20);
         if (entry.maxCombo) {
-          detail += '  🔥' + entry.maxCombo;
+          detail += ' · 连击 ' + entry.maxCombo;
         }
         if (entry.fastestReaction !== null && entry.fastestReaction !== undefined) {
-          detail += '  ⚡' + (entry.fastestReaction / 1000).toFixed(2) + 's';
+          detail += ' · ' + (entry.fastestReaction / 1000).toFixed(2) + 's';
         }
         ctx.fillStyle = COLOR_SECONDARY;
-        ctx.font = '10px ' + FONT_MONO;
-        ctx.fillText(detail, 230, itemY + 22);
+        ctx.font = '9px ' + FONT_FAMILY;
+        ctx.fillText(fitText(ctx, detail, 104), 150, itemY + 39);
 
         // 模式
         ctx.fillStyle = COLOR_SECONDARY;
@@ -153,20 +172,26 @@
           ? '第' + (entry.level || 1) + '关'
           : entry.mode === 'single' ? '单人' :
             entry.mode === 'shadow' ? '在线PK' : entry.mode;
-        ctx.fillText(modeLabel, CANVAS_W - 98, itemY + 12);
+        ctx.fillText(fitText(ctx, modeLabel, 66), CANVAS_W - 40, itemY + 18);
 
         // 日期
-        ctx.font = '10px ' + FONT_MONO;
-        var dateStr = entry.date || '';
-        // 只显示月-日 时:分
-        ctx.fillText(dateStr.length > 10 ? dateStr.slice(5) : dateStr, CANVAS_W - 42, itemY + 12);
+        ctx.fillStyle = 'rgba(255,255,255,0.38)';
+        ctx.font = '9px ' + FONT_MONO;
+        ctx.fillText(formatDate(entry.date), CANVAS_W - 40, itemY + 39);
 
-        itemY += 56;
+        if (i < itemsToShow - 1) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+          ctx.beginPath();
+          ctx.moveTo(40, itemY + 58);
+          ctx.lineTo(CANVAS_W - 40, itemY + 58);
+          ctx.stroke();
+        }
+        itemY += 61;
       }
     }
 
     // 底部分隔线
-    var bottomDividerY = 686;
+    var bottomDividerY = 670;
     ctx.strokeStyle = 'rgba(0,245,160,0.18)';
     ctx.beginPath();
     ctx.moveTo(38, bottomDividerY);
@@ -175,7 +200,7 @@
 
     // 返回按钮
     var bottomBtnW = CANVAS_W - 76, bottomBtnH = 48;
-    this.drawBtn(ctx, 38, 702, bottomBtnW, bottomBtnH,
+    this.drawBtn(ctx, 38, 686, bottomBtnW, bottomBtnH,
       '返回首页  /  BACK', 'leaderboardBack', 'leaderboardBack', {
         bg: COLOR_PRIMARY,
         border: COLOR_PRIMARY,
@@ -187,7 +212,7 @@
 
     // 清空按钮（有数据时显示）
     if (hasData) {
-      this.drawBtn(ctx, 38, 758, bottomBtnW, 36,
+      this.drawBtn(ctx, 38, 746, bottomBtnW, 36,
         '清空记录  /  CLEAR', 'leaderboardClear', 'leaderboardClear', {
           bg: 'rgba(14,22,20,0.90)',
           border: 'rgba(255,61,90,0.30)',

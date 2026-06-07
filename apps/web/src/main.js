@@ -179,6 +179,7 @@
     this.screenFlashColor = '';
     this.screenFlashEndTime = 0;
     this.hiddenAt = 0;
+    this.exitConfirm = null;
 
     // 触控
     this.touchStartX = 0;
@@ -191,6 +192,7 @@
     // 渲染循环
     this.animFrameId = null;
     this.startQuestionTimerId = null;
+    this.startQuestionDueAt = 0;
     this.nextQuestionTimerId = null;
 
     // 初始化
@@ -287,7 +289,7 @@
 
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
-        self.hiddenAt = self.page === 'playing' ? Date.now() : 0;
+        self.hiddenAt = self.page === 'playing' && !self.exitConfirm ? Date.now() : 0;
       } else if (self.hiddenAt) {
         if (self.page === 'playing' && !self.questionAnswered && self.questionStartTime > 0) {
           var pauseStart = Math.max(self.hiddenAt, self.questionStartTime);
@@ -313,6 +315,17 @@
 
   OppositeGame.prototype.onKeyDown = function (e) {
     var key = e.key;
+
+    if (this.exitConfirm) {
+      if (key === 'Escape') {
+        e.preventDefault();
+        this.closeExitConfirm();
+      } else if (key === 'Enter' || key === ' ') {
+        e.preventDefault();
+        this.confirmExitGame();
+      }
+      return;
+    }
 
     if (this.page === 'home' && (key === 'Enter' || key === ' ')) {
       e.preventDefault();
@@ -352,12 +365,35 @@
       this.goToPage(this.playMode === 'level' ? 'level_select' : 'home');
       return;
     }
-    if ((this.page === 'level_select' || this.page === 'online_pk') && key === 'Escape') {
+    if (this.page === 'online_pk' && this.onlinePkState === 'playing' && key === 'Escape') {
+      e.preventDefault();
+      this.openExitConfirm();
+      return;
+    }
+    if ((this.page === 'level_select' ||
+         (this.page === 'online_pk' && this.onlinePkState !== 'playing')) &&
+        key === 'Escape') {
       e.preventDefault();
       if (this.page === 'online_pk' && typeof this.leaveOnlineMatch === 'function') {
         this.leaveOnlineMatch();
       }
       this.goToPage('home');
+      return;
+    }
+    if (this.page === 'tutorial' && key === 'Escape') {
+      e.preventDefault();
+      this.leavePreparationPage();
+      return;
+    }
+    if (this.page === 'pk_transition' && key === 'Escape') {
+      e.preventDefault();
+      this.resetGameData();
+      this.goToPage('home');
+      return;
+    }
+    if (this.page === 'playing' && key === 'Escape') {
+      e.preventDefault();
+      this.openExitConfirm();
       return;
     }
     if (this.page === 'level_select' && (key === 'ArrowLeft' || key === 'ArrowRight')) {
@@ -454,6 +490,11 @@
     var swipeDir = absDX >= absDY
       ? (deltaX > 0 ? 'swipe_right' : 'swipe_left')
       : (deltaY > 0 ? 'swipe_down' : 'swipe_up');
+
+    if (this.exitConfirm) {
+      this.handleExitConfirmInput(end, isSwipe);
+      return;
+    }
 
     switch (this.page) {
       case 'home':
@@ -572,6 +613,19 @@
   };
 
   OppositeGame.prototype.handleOnlinePkInput = function (point, isSwipe, swipeDir) {
+    if (!isSwipe) {
+      var navBtn = this.hitTest(point);
+      if (navBtn && navBtn.id === 'compactBack') {
+        if (this.onlinePkState === 'playing') {
+          this.openExitConfirm();
+        } else {
+          this.leaveOnlineMatch();
+          this.goToPage('home');
+        }
+        return;
+      }
+    }
+
     // ── 在线对战进行中：处理游戏操作 ──
     if (this.onlinePkState === 'playing' && !this.questionAnswered && this.question) {
       var q = this.question;
@@ -639,10 +693,19 @@
     var btn = this.hitTest(point);
     if (btn && btn.id === 'tutorialStart') {
       this.startGame();
+    } else if (btn && btn.id === 'compactBack') {
+      this.leavePreparationPage();
     }
   };
 
   OppositeGame.prototype.handleGameInput = function (point, isSwipe, swipeDir) {
+    if (!isSwipe) {
+      var navBtn = this.hitTest(point);
+      if (navBtn && navBtn.id === 'compactBack') {
+        this.openExitConfirm();
+        return;
+      }
+    }
     if (this.questionAnswered) return; // 反馈显示期间忽略操作
 
     var question = this.question;
@@ -706,7 +769,7 @@
    * 命中测试：遍历当前 buttons 数组，返回命中的按钮对象
    */
   OppositeGame.prototype.hitTest = function (point) {
-    for (var i = 0; i < this.buttons.length; i++) {
+    for (var i = this.buttons.length - 1; i >= 0; i--) {
       var b = this.buttons[i];
       if (point.x >= b.x && point.x <= b.x + b.w &&
           point.y >= b.y && point.y <= b.y + b.h) {
@@ -723,9 +786,109 @@
       clearTimeout(this.startQuestionTimerId);
       this.startQuestionTimerId = null;
     }
+    this.startQuestionDueAt = 0;
     if (this.nextQuestionTimerId !== null) {
       clearTimeout(this.nextQuestionTimerId);
       this.nextQuestionTimerId = null;
+    }
+  };
+
+  OppositeGame.prototype.scheduleNextQuestion = function (delay) {
+    var self = this;
+    if (this.nextQuestionTimerId !== null) clearTimeout(this.nextQuestionTimerId);
+    this.nextQuestionTimerId = setTimeout(function () {
+      self.nextQuestionTimerId = null;
+      if (self.page === 'playing' && self.questionAnswered && !self.exitConfirm) {
+        self.nextQuestion();
+      }
+    }, Math.max(0, delay == null ? FEEDBACK_DURATION : delay));
+  };
+
+  OppositeGame.prototype.leavePreparationPage = function () {
+    this.resetGameData();
+    if (this.playMode === 'level') {
+      this.goToPage('level_select');
+    } else {
+      this.goToPage('home');
+    }
+  };
+
+  OppositeGame.prototype.openExitConfirm = function () {
+    if (this.exitConfirm) return;
+    var now = Date.now();
+    var nextQuestionRemaining = null;
+    var startQuestionRemaining = null;
+    if (this.startQuestionTimerId !== null) {
+      startQuestionRemaining = Math.max(0, this.startQuestionDueAt - now);
+      clearTimeout(this.startQuestionTimerId);
+      this.startQuestionTimerId = null;
+      this.startQuestionDueAt = 0;
+    }
+    if (this.nextQuestionTimerId !== null) {
+      nextQuestionRemaining = Math.max(0, this.feedbackEndTime - now);
+      clearTimeout(this.nextQuestionTimerId);
+      this.nextQuestionTimerId = null;
+    }
+    this.exitConfirm = {
+      openedAt: now,
+      startQuestionRemaining: startQuestionRemaining,
+      nextQuestionRemaining: nextQuestionRemaining
+    };
+    this.stopMotionTracking();
+    this.render();
+  };
+
+  OppositeGame.prototype.closeExitConfirm = function () {
+    if (!this.exitConfirm) return;
+    var pausedFor = Date.now() - this.exitConfirm.openedAt;
+    var startQuestionRemaining = this.exitConfirm.startQuestionRemaining;
+    var nextQuestionRemaining = this.exitConfirm.nextQuestionRemaining;
+    this.exitConfirm = null;
+
+    if (this.page === 'playing' && !this.questionAnswered && this.questionStartTime > 0) {
+      this.questionStartTime += pausedFor;
+      this.startMotionTracking();
+    }
+    if (this.page === 'playing' && this.feedbackEndTime > 0) {
+      this.feedbackEndTime += pausedFor;
+    }
+    if (nextQuestionRemaining !== null && this.page === 'playing') {
+      this.scheduleNextQuestion(nextQuestionRemaining);
+    }
+    if (startQuestionRemaining !== null && this.page === 'playing') {
+      var self = this;
+      this.startQuestionDueAt = Date.now() + startQuestionRemaining;
+      this.startQuestionTimerId = setTimeout(function () {
+        self.startQuestionTimerId = null;
+        self.startQuestionDueAt = 0;
+        if (self.page === 'playing' && !self.exitConfirm) self.nextQuestion();
+      }, startQuestionRemaining);
+    }
+    this.render();
+  };
+
+  OppositeGame.prototype.confirmExitGame = function () {
+    if (!this.exitConfirm) return;
+    this.exitConfirm = null;
+    if (this.page === 'online_pk') {
+      if (typeof this.leaveOnlineMatch === 'function') this.leaveOnlineMatch();
+      this.goToPage('home');
+      return;
+    }
+
+    var target = this.playMode === 'level' ? 'level_select' : 'home';
+    this.resetGameData();
+    this.goToPage(target);
+  };
+
+  OppositeGame.prototype.handleExitConfirmInput = function (point, isSwipe) {
+    if (isSwipe) return;
+    var btn = this.hitTest(point);
+    if (!btn) return;
+    if (btn.id === 'exitContinue') {
+      this.closeExitConfirm();
+    } else if (btn.id === 'exitConfirm') {
+      this.confirmExitGame();
     }
   };
 
@@ -920,6 +1083,7 @@
     this.screenFlashEndTime = 0;
     this.hiddenAt = 0;
     this.shareNotice = '';
+    this.exitConfirm = null;
     this.stopMotionTracking();
   };
 
@@ -937,8 +1101,10 @@
       }
       var delay = this.startQuestionDelayMs || TRANSITION_DELAY;
       this.startQuestionDelayMs = 0;
+      this.startQuestionDueAt = Date.now() + delay;
       this.startQuestionTimerId = setTimeout(function () {
         self.startQuestionTimerId = null;
+        self.startQuestionDueAt = 0;
         if (self.page === 'playing') {
           self.nextQuestion();
         }
@@ -948,13 +1114,13 @@
 
   OppositeGame.prototype.getBackgroundMusicScene = function () {
     if (this.page === 'leaderboard') {
-      return { track: 'dark', volume: 0.085 };
+      return { track: 'dark', volume: 0.18 };
     }
 
     if (this.page === 'online_pk') {
       return {
         track: 'drive',
-        volume: this.onlinePkState === 'playing' ? 0.13 : 0.105
+        volume: this.onlinePkState === 'playing' ? 0.26 : 0.22
       };
     }
 
@@ -963,12 +1129,12 @@
          this.page === 'pk_transition' || this.page === 'result')) {
       return {
         track: 'drive',
-        volume: this.page === 'result' ? 0.085 : 0.13
+        volume: this.page === 'result' ? 0.19 : 0.26
       };
     }
 
     if (this.page === 'playing' && this.playMode === 'level' && this.selectedLevel >= 3) {
-      return { track: 'horror', volume: 0.10 };
+      return { track: 'horror', volume: 0.22 };
     }
 
     if (this.page === 'result') {
@@ -977,11 +1143,11 @@
           ? Boolean(this.levelResult && this.levelResult.passed)
           : this.score >= Math.ceil(Math.max(1, this.questions.length) * 0.6));
       return passed
-        ? { track: 'theme', volume: 0.095 }
-        : { track: 'dark', volume: 0.085 };
+        ? { track: 'theme', volume: 0.20 }
+        : { track: 'dark', volume: 0.18 };
     }
 
-    return { track: 'theme', volume: this.page === 'playing' ? 0.105 : 0.115 };
+    return { track: 'theme', volume: this.page === 'playing' ? 0.24 : 0.22 };
   };
 
   OppositeGame.prototype.syncBackgroundMusic = function (force) {
@@ -992,8 +1158,8 @@
     this._lastBGMKey = key;
     window.AudioManager.playBGM(scene.track, {
       volume: scene.volume,
-      fadeInMs: 600,
-      fadeOutMs: 600
+      fadeInMs: 120,
+      fadeOutMs: 120
     });
   };
 
@@ -1088,7 +1254,7 @@
     if (!this.question || this.question.type !== 'motion' || !window.MotionSupport) return;
     var self = this;
     this.motionStop = window.MotionSupport.start(function (action) {
-      if (self.page === 'playing' && !self.questionAnswered) {
+      if (self.page === 'playing' && !self.exitConfirm && !self.questionAnswered) {
         self.judgeAnswer(action, self.getReactionTime());
       }
     });
@@ -1206,13 +1372,7 @@
     });
 
     // 延迟进入下一题
-    var self = this;
-    this.nextQuestionTimerId = setTimeout(function () {
-      self.nextQuestionTimerId = null;
-      if (self.page === 'playing' && self.questionAnswered) {
-        self.nextQuestion();
-      }
-    }, FEEDBACK_DURATION);
+    this.scheduleNextQuestion(FEEDBACK_DURATION);
   };
 
   /**
@@ -1251,13 +1411,7 @@
       combo_after: 0
     });
 
-    var self = this;
-    this.nextQuestionTimerId = setTimeout(function () {
-      self.nextQuestionTimerId = null;
-      if (self.page === 'playing' && self.questionAnswered) {
-        self.nextQuestion();
-      }
-    }, FEEDBACK_DURATION);
+    this.scheduleNextQuestion(FEEDBACK_DURATION);
   };
 
   /**
@@ -1549,6 +1703,7 @@
       ctx.fillStyle = this.screenFlashColor;
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     }
+    if (this.exitConfirm) this.drawExitConfirm(ctx);
 
     ctx.restore();
   };
@@ -1671,6 +1826,68 @@
     ctx.textAlign = align || 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(text || '').toUpperCase(), x, y);
+  };
+
+  OppositeGame.prototype.drawCompactBackButton = function (ctx) {
+    var x = 10;
+    var y = 8;
+    var visibleSize = 32;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,13,11,0.84)';
+    this.roundRect(ctx, x + 6, y + 6, visibleSize, visibleSize, 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x + 6, y + 6, visibleSize, visibleSize, 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.font = 'bold 20px ' + FONT_MONO;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('‹', x + 22, y + 21);
+    ctx.restore();
+    this.buttons.push({ x: x, y: y, w: 44, h: 44, id: 'compactBack', action: 'back' });
+  };
+
+  OppositeGame.prototype.drawExitConfirm = function (ctx) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    this.drawPanel(ctx, 34, 250, CANVAS_W - 68, 248, {
+      border: 'rgba(255,216,92,0.52)',
+      fill: 'rgba(10,15,13,0.98)',
+      accentColor: COLOR_WARNING,
+      shadowColor: 'rgba(0,0,0,0.42)'
+    });
+    this.drawMicroLabel(ctx, 'PAUSED', CANVAS_W / 2, 286, 'center', COLOR_WARNING);
+    ctx.fillStyle = COLOR_WHITE;
+    ctx.font = 'bold 24px ' + FONT_FAMILY;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var isOnline = this.page === 'online_pk';
+    ctx.fillText(isOnline ? '退出对战？' : '退出本局？', CANVAS_W / 2, 326);
+    ctx.fillStyle = COLOR_SECONDARY;
+    ctx.font = '13px ' + FONT_FAMILY;
+    ctx.fillText(isOnline ? '在线对局仍在进行' : '当前进度不会保存', CANVAS_W / 2, 358);
+    this.drawBtn(ctx, 54, 392, 126, 52,
+      '继续游戏', 'exitContinue', 'exitContinue', {
+        bg: COLOR_PRIMARY,
+        border: COLOR_PRIMARY,
+        text: '#07110d',
+        fontSize: 14,
+        radius: BTN_RADIUS,
+        cornerBlocks: false
+      });
+    this.drawBtn(ctx, 195, 392, 126, 52,
+      '退出', 'exitConfirm', 'exitConfirm', {
+        bg: 'rgba(255,61,90,0.10)',
+        border: 'rgba(255,61,90,0.52)',
+        text: COLOR_DANGER,
+        fontSize: 14,
+        radius: BTN_RADIUS,
+        cornerBlocks: false
+      });
+    ctx.restore();
   };
 
   OppositeGame.prototype.setFitFont = function (ctx, text, maxWidth, maxSize, minSize, weight, family) {
@@ -2204,10 +2421,11 @@
     this.buttons = [];
     var q = this.question;
     var self = this;
+    this.drawCompactBackButton(ctx);
 
     // ── 双人对战顶栏 ──
     this.drawMicroLabel(ctx, 'ROUND ' + this.onlineRound + ' / ' + this.onlineTotalRounds,
-      22, 28, 'left', COLOR_PRIMARY);
+      60, 28, 'left', COLOR_PRIMARY);
     this.drawMicroLabel(ctx, 'VS ' + (this.opponentName || '对手'),
       CANVAS_W / 2, 28, 'center', COLOR_INFO);
     this.drawMicroLabel(ctx, 'SCORE ' + this.onlineScores.me,
@@ -2437,6 +2655,7 @@
 
   OppositeGame.prototype.drawTutorialPage = function (ctx) {
     this.buttons = [];
+    this.drawCompactBackButton(ctx);
 
     var isPractice = this.playMode === 'practice';
     var levelConfig = this.playMode === 'level' ? this.getLevelConfig(this.selectedLevel) : null;
@@ -2506,7 +2725,14 @@
     this.buttons = [];
 
     var q = this.question;
-    if (!q) return;
+    this.drawCompactBackButton(ctx);
+    if (!q) {
+      ctx.fillStyle = COLOR_SECONDARY;
+      ctx.font = 'bold 16px ' + FONT_FAMILY;
+      ctx.textAlign = 'center';
+      ctx.fillText('正在准备题目...', CANVAS_W / 2, 390);
+      return;
+    }
 
     // ── 顶栏 ──
     this.drawTopBar(ctx);
@@ -2582,7 +2808,7 @@
     this.drawTimerBar(ctx);
 
     // ── 更新倒计时（仅在未回答时） ──
-    if (!this.questionAnswered && this.questionStartTime > 0) {
+    if (!this.exitConfirm && !this.questionAnswered && this.questionStartTime > 0) {
       var elapsed = Date.now() - this.questionStartTime;
       this.timerProgress = Math.max(0, 1 - elapsed / this.timeLimit);
       if (this.timerProgress <= 0) {
@@ -2598,7 +2824,7 @@
     ctx.textBaseline = 'middle';
 
     this.drawMicroLabel(ctx, 'MISSION ' + ('0' + this.currentIndex).slice(-2),
-      22, 28, 'left', COLOR_PRIMARY);
+      60, 28, 'left', COLOR_PRIMARY);
     this.drawMicroLabel(ctx, this.gameMode === 'local_pk'
       ? 'PLAYER ' + this.currentPlayer
       : this.playMode === 'practice' ? 'PRACTICE'
@@ -2790,6 +3016,7 @@
    */
   OppositeGame.prototype.drawPkTransitionPage = function (ctx) {
     this.buttons = [];
+    this.drawCompactBackButton(ctx);
 
     var scoreA = this.playerAResult
       ? this.getSafeNumber(this.playerAResult.totalScore, 0)
@@ -2845,6 +3072,9 @@
     var btn = this.hitTest(point);
     if (btn && btn.id === 'startPlayerB') {
       this.startGame();
+    } else if (btn && btn.id === 'compactBack') {
+      this.resetGameData();
+      this.goToPage('home');
     }
   };
 
